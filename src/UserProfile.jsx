@@ -1,16 +1,113 @@
-
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from './supabaseClient';
+import QRCode from 'react-qr-code';
+import { toast, Toaster } from 'react-hot-toast';
 import { Phone, Mail, Globe, MapPin, User, Briefcase, Share2, Download, Facebook, Instagram, Linkedin, MessageCircle } from 'lucide-react';
+
+// Design Constants
+const GRADIENTS = {
+    0: 'linear-gradient(135deg, #FFB6C1, #E6E6FA, #DDA0DD)', // Rose Lavender
+    1: 'linear-gradient(135deg, #667eea, #764ba2)', // Ocean Dusk
+    2: 'linear-gradient(135deg, #f7971e, #ffd200)', // Midnight Gold
+    3: 'linear-gradient(135deg, #e0eafc, #cfdef3)', // Arctic Slate
+};
+
+const TEXT_COLORS = {
+    0: '#FFFFFF', // White
+    1: '#0F172A', // Black
+    2: '#FFD700'  // Golden
+};
+
+const getGradient = (index, customColors) => {
+    if (customColors && customColors.length > 0) {
+        if (customColors.length === 1) return customColors[0];
+        return `linear-gradient(135deg, ${customColors.join(', ')})`;
+    }
+    return GRADIENTS[index] || GRADIENTS[0];
+};
+
+const getTextColor = (index) => TEXT_COLORS[index] || TEXT_COLORS[1];
+
+const adjustOpacity = (hexColor, opacity) => {
+    // Basic hex to rgba converter for simple hex codes
+    if (!hexColor) return `rgba(0,0,0,${opacity})`;
+    let hex = hexColor.replace('#', '');
+    if (hex.length === 3) hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    return `rgba(${r},${g},${b},${opacity})`;
+};
+
+const launchUrl = (url) => {
+    if (!url) return;
+    let formattedUrl = url;
+    if (!url.startsWith('http://') &&
+        !url.startsWith('https://') &&
+        !url.startsWith('tel:') &&
+        !url.startsWith('mailto:')) {
+        formattedUrl = 'https://' + url;
+    }
+    window.open(formattedUrl, '_blank');
+};
+
+
+// Components
+const IconButton = ({ icon: Icon, onClick, size, color }) => (
+    <button
+        onClick={onClick}
+        style={{
+            background: 'none',
+            border: 'none',
+            padding: '8px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: color || '#1F2937',
+            transition: 'transform 0.2s, opacity 0.2s',
+        }}
+        onMouseOver={(e) => {
+            e.currentTarget.style.transform = 'scale(1.1)';
+            e.currentTarget.style.opacity = '0.8';
+        }}
+        onMouseOut={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.opacity = '1';
+        }}
+    >
+        <Icon size={size || 22} />
+    </button>
+);
+
+
+const inputStyle = {
+    width: '100%',
+    padding: '10px 16px',
+    marginBottom: '12px',
+    border: '1px solid #E5E7EB',
+    borderRadius: '12px',
+    fontSize: '15px',
+    fontFamily: 'inherit',
+    backgroundColor: 'white'
+};
+
 
 const UserProfile = () => {
     const { id } = useParams();
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [leadForm, setLeadForm] = useState({ name: '', email: '', phone: '' });
-    const [leadSubmitted, setLeadSubmitted] = useState(false);
+
+    // Form state corresponding to "ContactForm" from design
+    const [formData, setFormData] = useState({
+        name: '',
+        email: '',
+        phone: '',
+        customFields: {} // key: field.id, value: user input
+    });
+    const [submitting, setSubmitting] = useState(false);
 
     useEffect(() => {
         const fetchUser = async () => {
@@ -35,167 +132,342 @@ const UserProfile = () => {
         fetchUser();
     }, [id]);
 
-
-
-    const handleLeadSubmit = async (e) => {
+    const handleFormSubmit = async (e) => {
         e.preventDefault();
-        // Hypothetical lead submission logic
+        setSubmitting(true);
         try {
+            // Build custom_fields array from form input — only store label + value
+            const customFieldsPayload = Object.entries(formData.customFields).map(([fieldId, value]) => {
+                const fieldDef = (contactFormRef.current?.customFields || []).find(f => f.id === fieldId);
+                return {
+                    label: fieldDef?.label || fieldId,
+                    value
+                };
+            });
+
             const { error } = await supabase
-                .from('leads')
-                .insert([{ user_id: id, ...leadForm }]);
+                .from('contact_form_submissions')
+                .insert([{
+                    owner_id: id,
+                    name: formData.name,
+                    email: formData.email || null,
+                    phone: formData.phone || null,
+                    custom_fields: customFieldsPayload.length > 0 ? customFieldsPayload : null,
+                    source: 'vcard_view'
+                }]);
 
             if (error) throw error;
-
-            console.log("Lead Submitted:", { userId: id, ...leadForm });
-            setLeadSubmitted(true);
-            setTimeout(() => setLeadSubmitted(false), 3000);
-            setLeadForm({ name: '', email: '', phone: '' });
+            toast.success('Thanks! Your details were sent.');
+            setFormData({ name: '', email: '', phone: '', customFields: {} });
         } catch (err) {
             console.error("Error submitting lead:", err);
-            alert("Failed to submit lead. Please try again.");
+            toast.error("Failed to submit. Please try again.");
+        } finally {
+            setSubmitting(false);
         }
-        setTimeout(() => setLeadSubmitted(false), 3000);
-        setLeadForm({ name: '', email: '', phone: '' });
     };
+
+    // Ref to pass contactForm into the submit handler closure
+    const contactFormRef = React.useRef(null);
 
     if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50">Loading...</div>;
     if (error) return <div className="min-h-screen flex items-center justify-center bg-gray-50 text-red-500">{error}</div>;
     if (!user) return <div className="min-h-screen flex items-center justify-center bg-gray-50">User not found.</div>;
 
+    // --- Data Extraction & Mocking (Since Backend might not have full `Design` JSON yet) ---
+    // If user.Design exists, we'd use it directly. Otherwise, we mock it based on existing user data.
+    const design = user.Design || {
+        card: {
+            gradientIndex: 0,
+            textColorIndex: 2, // Golden
+            customBackgroundColors: ['#6D59F0']
+        },
+        socialLinks: {
+            phone: user.phone || '',
+            email: user.email || '',
+            website: user.website || user.vcard_url || '',
+            instagram: user.Instagram || '',
+            facebook: user.facebook || '',
+            linkedin: user['LinkedIn'] || '',
+            whatsapp: user.phone || ''
+        },
+        buttons: user.vcard_url ? [
+            { label: 'Download vCard', url: user.vcard_url, isDefault: true }
+        ] : [],
+        contactForm: {
+            enabled: true,
+            mandatoryField: 'email',
+            showPhone: true,
+            showEmail: true,
+            customFields: []
+        }
+    };
+
+    const gradient = getGradient(design.card.gradientIndex, design.card.customBackgroundColors);
+    const textColor = getTextColor(design.card.textColorIndex);
+    const { socialLinks, buttons, contactForm } = design;
+
+    // Build icons to display purely from socialLinks object map
+    const iconMapping = [
+        { key: 'phone', icon: Phone, action: (val) => launchUrl(`tel:${val}`) },
+        { key: 'email', icon: Mail, action: (val) => launchUrl(`mailto:${val}`) },
+        { key: 'website', icon: Globe, action: (val) => launchUrl(val) },
+        { key: 'instagram', icon: Instagram, action: (val) => launchUrl(val) },
+        { key: 'facebook', icon: Facebook, action: (val) => launchUrl(val) },
+        { key: 'linkedin', icon: Linkedin, action: (val) => launchUrl(val) },
+        { key: 'whatsapp', icon: MessageCircle, action: (val) => launchUrl(`https://wa.me/${val}`) }
+    ];
+    const displayIcons = iconMapping.filter(item => socialLinks[item.key]);
+
+
     return (
-        <div className="min-h-screen bg-white flex justify-center">
-            <div className="w-full max-w-md bg-white shadow-xl overflow-hidden relative">
-                {/* Header / Cover Image */}
-                <div className="h-48 bg-gray-100 relative">
-                    {/* Placeholder for cover image if user has one, or just a solid color/gradient */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-purple-50 to-blue-50 opacity-80"></div>
-                </div>
+        <div className="min-h-screen bg-gray-50 flex justify-center w-full" style={{ fontFamily: 'sans-serif' }}>
+            <Toaster position="bottom-center" />
+            {/* Scrollable Container mapping standard view specs */}
+            <div className="w-full max-w-md bg-white shadow-xl relative" style={{ padding: '24px 24px 16px 24px', overflowY: 'auto', minHeight: '100vh' }}>
 
-                {/* Profile Picture */}
-                <div className="absolute top-32 left-1/2 transform -translate-x-1/2">
-                    <div className="w-32 h-32 rounded-full border-4 border-white overflow-hidden bg-gray-200">
-                        {user.profile_image_url ? (
-                            <img src={user.profile_image_url} alt={user.full_name} className="w-full h-full object-cover" />
-                        ) : (
-                            <User className="w-full h-full text-gray-400 p-4" />
-                        )}
+                {/* 1. BUSINESS CARD SECTION */}
+                <div
+                    style={{
+                        background: gradient,
+                        borderRadius: '24px',
+                        padding: '24px',
+                        boxShadow: '0 8px 15px rgba(0,0,0,0.08)',
+                        position: 'relative',
+                        display: 'flex',
+                        flexDirection: 'column'
+                    }}
+                >
+                    {/* Top Row: Avatar + Name/Title */}
+                    <div style={{ display: 'flex', gap: '16px', alignItems: 'center', zIndex: 10 }}>
+                        {/* Avatar */}
+                        <div style={{
+                            width: '64px',
+                            height: '64px',
+                            borderRadius: '50%',
+                            border: '2px solid white',
+                            overflow: 'hidden',
+                            backgroundColor: '#FFED4B',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0
+                        }}>
+                            {user.profile_image_url ? (
+                                <img src={user.profile_image_url} alt={user.full_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ) : (
+                                <span style={{ fontSize: '24px', fontWeight: 600, color: '#fff' }}>
+                                    {(user.full_name || 'U').substring(0, 2).toUpperCase()}
+                                </span>
+                            )}
+                        </div>
+
+                        {/* Name & Title */}
+                        <div style={{ flex: 1, overflow: 'hidden' }}>
+                            <h2 style={{ fontSize: '20px', fontWeight: 700, color: textColor, margin: '0 0 4px 0', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                                {user.full_name || 'No Name'}
+                            </h2>
+                            <p style={{ fontSize: '13px', fontWeight: 500, color: adjustOpacity(textColor, 0.9), margin: 0, textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                                {user.job_title} {user.companies?.name ? `at ${user.companies.name}` : ''}
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Bottom Row: Contact Info + QR */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', zIndex: 10, marginTop: '18px' }}>
+
+                        {/* Contact Snippets */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingBottom: '8px' }}>
+                            {socialLinks.phone && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <Phone size={15} color={textColor} fill={textColor} strokeWidth={1} />
+                                    <span style={{ fontSize: '13px', fontWeight: 500, color: textColor }}>
+                                        {socialLinks.phone}
+                                    </span>
+                                </div>
+                            )}
+                            {socialLinks.email && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <Mail size={15} color={textColor} fill={textColor} strokeWidth={1} />
+                                    <span style={{ fontSize: '13px', fontWeight: 500, color: textColor, textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden', maxWidth: '160px' }}>
+                                        {socialLinks.email}
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* QR Code */}
+                        <div style={{
+                            width: '90px',
+                            height: '90px',
+                            background: 'white',
+                            borderRadius: '12px',
+                            padding: '6px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxShadow: '0 4px 8px rgba(0,0,0,0.15)',
+                            flexShrink: 0
+                        }}>
+                            {/* If Vcard URL not ready, fallback to window.location.href or website */}
+                            <QRCode value={user.vcard_url || window.location.href} size={78} style={{ width: '100%', height: '100%' }} />
+                        </div>
                     </div>
                 </div>
 
-                {/* Profile Info */}
-                <div className="mt-20 px-6 text-center">
-                    <h1 className="text-2xl font-bold text-[#0F172A]">{user.full_name}</h1>
-                    <p className="text-[#6B7280] mt-1">
-                        {user.job_title}
-                        {user.company_role ? <span className="block text-sm text-[#6B7280]">at {user.companies?.name}</span> : null}
-                    </p>
-                </div>
+                <div style={{ height: '24px' }}></div> {/* Vertical Space */}
 
-                {/* Social Grid */}
-                <div className="flex justify-center gap-6 mt-6 px-6 flex-wrap">
-                    {user.phone && (
-                        <a href={`tel:${user.phone}`} className="text-[#0F172A] hover:text-gray-700 transition-colors">
-                            <Phone size={32} />
-                        </a>
-                    )}
-                    {user.email && (
-                        <a href={`mailto:${user.email}`} className="text-[#0F172A] hover:text-gray-700 transition-colors">
-                            <Mail size={32} />
-                        </a>
-                    )}
-                    {user.vcard_url && (
-                        <a href={user.vcard_url} target="_blank" rel="noopener noreferrer" className="text-[#0F172A] hover:text-gray-700 transition-colors">
-                            <Globe size={32} />
-                        </a>
-                    )}
-                    {user.Instagram && (
-                        <a href={user.Instagram} target="_blank" rel="noopener noreferrer" className="text-[#0F172A] hover:text-gray-700 transition-colors">
-                            <Instagram size={32} />
-                        </a>
-                    )}
-                    {user.facebook && (
-                        <a href={user.facebook} target="_blank" rel="noopener noreferrer" className="text-[#0F172A] hover:text-gray-700 transition-colors">
-                            <Facebook size={32} />
-                        </a>
-                    )}
-                    {user['LinkedIn'] && (
-                        <a href={user['LinkedIn']} target="_blank" rel="noopener noreferrer" className="text-[#0F172A] hover:text-gray-700 transition-colors">
-                            <Linkedin size={32} />
-                        </a>
-                    )}
-                </div>
-
-                {/* Primary Actions */}
-                <div className="px-6 mt-8 space-y-3">
-
-                    <a
-                        href={user.vcard_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block w-full py-3.5 px-4 bg-[#734BFF] text-white font-semibold rounded-xl text-center shadow-sm hover:bg-[#6441dd] transition-colors"
-                    >
-                        Visit Website
-                    </a>
-                </div>
-
-                {/* Lead Capture Form */}
-                <div className="mt-10 px-6 py-8 bg-gray-50 text-[#0F172A] border-t border-gray-100">
-                    <div className="text-center mb-6">
-                        <h3 className="text-lg font-semibold">Leave your contact details</h3>
-                        <p className="text-[#6B7280] text-sm mt-1">I'll get back to you as soon as possible</p>
+                {/* 2. SOCIAL MEDIA ICONS ROW */}
+                {displayIcons.length > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                        {displayIcons.map((item) => (
+                            <IconButton
+                                key={item.key}
+                                icon={item.icon}
+                                onClick={() => item.action(socialLinks[item.key])}
+                                color="#1F2937"
+                            />
+                        ))}
                     </div>
+                )}
 
-                    <form onSubmit={handleLeadSubmit} className="space-y-4">
-                        <div>
-                            <input
-                                type="text"
-                                placeholder="Name"
-                                required
-                                value={leadForm.name}
-                                onChange={(e) => setLeadForm({ ...leadForm, name: e.target.value })}
-                                className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#734BFF] text-[#0F172A] placeholder-[#9CA3AF]"
-                            />
-                        </div>
-                        <div>
-                            <input
-                                type="email"
-                                placeholder="Email"
-                                required
-                                value={leadForm.email}
-                                onChange={(e) => setLeadForm({ ...leadForm, email: e.target.value })}
-                                className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#734BFF] text-[#0F172A] placeholder-[#9CA3AF]"
-                            />
-                        </div>
-                        <div>
-                            <input
-                                type="tel"
-                                placeholder="Phone"
-                                required
-                                value={leadForm.phone}
-                                onChange={(e) => setLeadForm({ ...leadForm, phone: e.target.value })}
-                                className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#734BFF] text-[#0F172A] placeholder-[#9CA3AF]"
-                            />
-                        </div>
-                        <button
-                            type="submit"
-                            className="w-full py-3 px-4 bg-black text-white font-semibold rounded-lg hover:bg-gray-800 transition-colors"
-                        >
-                            {leadSubmitted ? 'Sent!' : 'Submit'}
-                        </button>
-                    </form>
-                </div>
+                <div style={{ height: '32px' }}></div> {/* Vertical Space */}
 
-                {/* Footer */}
-                <div className="py-6 text-center bg-gray-50 border-t border-gray-200">
-                    <p className="text-sm text-[#6B7280] flex items-center justify-center gap-2">
-                        <span>Powered by</span>
-                        <img src="/src/assets/KentroCard Logo.svg" alt="KentroCard" className="h-5" />
-                        {/* Fallback text if logo missing */}
-                        <span className="sr-only">KentroCard</span>
+                {/* 3. ACTION BUTTONS SECTION — only show non-default buttons */}
+                {buttons && buttons.filter(b => !b.isDefault).length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        {buttons.filter(b => !b.isDefault).map((button, idx) => (
+                            <button
+                                key={idx}
+                                onClick={() => launchUrl(button.url)}
+                                style={{
+                                    width: '100%',
+                                    height: '52px',
+                                    background: '#232323',
+                                    color: '#FFFFFF',
+                                    border: 'none',
+                                    borderRadius: '12px',
+                                    padding: '12px 24px',
+                                    fontSize: '15px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '8px',
+                                    transition: 'background 0.2s'
+                                }}
+                                onMouseOver={(e) => e.currentTarget.style.background = '#000'}
+                                onMouseOut={(e) => e.currentTarget.style.background = '#232323'}
+                            >
+                                {button.label}
+                            </button>
+                        ))}
+                    </div>
+                )}
+
+                <div style={{ height: '48px' }}></div> {/* Vertical Space */}
+
+                {/* 4. CONTACT FORM SECTION */}
+                {contactForm?.enabled && (() => {
+                    // Keep ref in sync for use in submit handler
+                    contactFormRef.current = contactForm;
+                    return (
+                        <div style={{ textAlign: 'center' }}>
+                            <h3 style={{ fontSize: '20px', fontWeight: 700, color: '#0F172A', margin: '0 0 4px 0' }}>
+                                Leave your contact details
+                            </h3>
+                            <p style={{ fontSize: '14px', fontWeight: 500, color: '#6B7280', margin: '0' }}>
+                                I'll get back to you as soon as possible
+                            </p>
+
+                            <form onSubmit={handleFormSubmit} style={{ marginTop: '32px', textAlign: 'left' }}>
+                                {/* Name */}
+                                <input
+                                    type="text"
+                                    placeholder="Name *"
+                                    required
+                                    value={formData.name}
+                                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                    style={inputStyle}
+                                />
+
+                                {/* Email */}
+                                {contactForm.showEmail && (
+                                    <input
+                                        type="email"
+                                        placeholder={contactForm.mandatoryField === 'email' ? 'Email *' : 'Email'}
+                                        required={contactForm.mandatoryField === 'email'}
+                                        value={formData.email}
+                                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                                        style={inputStyle}
+                                    />
+                                )}
+
+                                {/* Phone */}
+                                {contactForm.showPhone && (
+                                    <input
+                                        type="tel"
+                                        placeholder={contactForm.mandatoryField === 'phone' ? 'Phone *' : 'Phone'}
+                                        required={contactForm.mandatoryField === 'phone'}
+                                        value={formData.phone}
+                                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                                        style={inputStyle}
+                                    />
+                                )}
+
+                                {/* Custom Fields */}
+                                {(contactForm.customFields || []).map((field) => (
+                                    <input
+                                        key={field.id}
+                                        type="text"
+                                        placeholder={field.required ? `${field.label} *` : field.label}
+                                        required={field.required}
+                                        value={formData.customFields[field.id] || ''}
+                                        onChange={(e) => setFormData({
+                                            ...formData,
+                                            customFields: { ...formData.customFields, [field.id]: e.target.value }
+                                        })}
+                                        style={inputStyle}
+                                    />
+                                ))}
+
+                                {/* Submit */}
+                                <button
+                                    type="submit"
+                                    disabled={submitting}
+                                    style={{
+                                        ...inputStyle,
+                                        marginBottom: 0,
+                                        marginTop: '4px',
+                                        background: '#232323',
+                                        color: 'white',
+                                        height: '52px',
+                                        fontWeight: 600,
+                                        cursor: submitting ? 'not-allowed' : 'pointer',
+                                        opacity: submitting ? 0.6 : 1,
+                                        transition: 'background 0.2s',
+                                        textAlign: 'center',
+                                        border: 'none'
+                                    }}
+                                >
+                                    {submitting ? 'Sending...' : 'Submit'}
+                                </button>
+                            </form>
+                        </div>
+                    );
+                })()}
+
+                <div style={{ height: '24px' }}></div> {/* Vertical Space */}
+
+                {/* 5. POWERED BY LOGO FOOTER */}
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', paddingBottom: '16px' }}>
+                    <p style={{ fontSize: '12px', fontWeight: 500, color: '#9CA3AF', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        Powered by
+                        <img src="/src/assets/KentroCard Logo.svg" alt="KentroCard" style={{ height: '30px', objectFit: 'contain' }} />
                     </p>
-                    <a href="#" className="text-xs text-[#FFC107] font-medium mt-1 block">Create your own Link in Bio</a>
                 </div>
+
             </div>
         </div>
     );
