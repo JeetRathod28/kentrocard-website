@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from './supabaseClient';
+import kentroLogo from './assets/KentroCard Logo.svg';
 import QRCode from 'react-qr-code';
 import { toast, Toaster } from 'react-hot-toast';
 import { Phone, Mail } from 'lucide-react';
@@ -477,7 +478,7 @@ const UserProfile = () => {
                 <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', paddingBottom: '16px' }}>
                     <p style={{ fontSize: '12px', fontWeight: 500, color: '#9CA3AF', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
                         Powered by
-                        <img src="/src/assets/KentroCard Logo.svg" alt="KentroCard" style={{ height: '30px', objectFit: 'contain' }} />
+                        <img src={kentroLogo} alt="KentroCard" style={{ height: '30px', objectFit: 'contain' }} />
                     </p>
                 </div>
 
