@@ -3,7 +3,8 @@ import { useParams } from 'react-router-dom';
 import { supabase } from './supabaseClient';
 import QRCode from 'react-qr-code';
 import { toast, Toaster } from 'react-hot-toast';
-import { Phone, Mail, Globe, MapPin, User, Briefcase, Share2, Download, Facebook, Instagram, Linkedin, MessageCircle } from 'lucide-react';
+import { Phone, Mail } from 'lucide-react';
+import { getIconComponent } from './iconMapping';
 
 // Design Constants
 const GRADIENTS = {
@@ -58,23 +59,27 @@ const IconButton = ({ icon: Icon, onClick, size, color }) => (
     <button
         onClick={onClick}
         style={{
-            background: 'none',
-            border: 'none',
-            padding: '8px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
+            display: 'inline-flex',
             justifyContent: 'center',
+            alignItems: 'center',
+            width: '44px',
+            height: '44px',
+            borderRadius: '50%',
+            backgroundColor: 'transparent',
+            border: 'none',
+            boxShadow: '0 2px 8px rgba(123, 75, 255, 0.15)', // Soft purple shadow
+            transition: 'box-shadow 0.3s, transform 0.2s',
             color: color || '#1F2937',
-            transition: 'transform 0.2s, opacity 0.2s',
+            cursor: 'pointer',
+            padding: 0 // Remove default padding since we have fixed width/height
         }}
         onMouseOver={(e) => {
-            e.currentTarget.style.transform = 'scale(1.1)';
-            e.currentTarget.style.opacity = '0.8';
+            e.currentTarget.style.boxShadow = '0 4px 16px rgba(123, 75, 255, 0.25)';
+            e.currentTarget.style.transform = 'scale(1.05)';
         }}
         onMouseOut={(e) => {
+            e.currentTarget.style.boxShadow = '0 2px 8px rgba(123, 75, 255, 0.15)';
             e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.opacity = '1';
         }}
     >
         <Icon size={size || 22} />
@@ -205,19 +210,27 @@ const UserProfile = () => {
 
     const gradient = getGradient(design.card.gradientIndex, design.card.customBackgroundColors);
     const textColor = getTextColor(design.card.textColorIndex);
-    const { socialLinks, buttons, contactForm } = design;
+    const { socialLinks, socialIconStyles, buttons, contactForm } = design;
 
-    // Build icons to display purely from socialLinks object map
-    const iconMapping = [
-        { key: 'phone', icon: Phone, action: (val) => launchUrl(`tel:${val}`) },
-        { key: 'email', icon: Mail, action: (val) => launchUrl(`mailto:${val}`) },
-        { key: 'website', icon: Globe, action: (val) => launchUrl(val) },
-        { key: 'instagram', icon: Instagram, action: (val) => launchUrl(val) },
-        { key: 'facebook', icon: Facebook, action: (val) => launchUrl(val) },
-        { key: 'linkedin', icon: Linkedin, action: (val) => launchUrl(val) },
-        { key: 'whatsapp', icon: MessageCircle, action: (val) => launchUrl(`https://wa.me/${val}`) }
-    ];
-    const displayIcons = iconMapping.filter(item => socialLinks[item.key]);
+    // Build social icons list, using socialIconStyles index to pick the correct lucide icon per platform
+    const URL_ACTIONS = {
+        phone: (val) => launchUrl(`tel:${val}`),
+        email: (val) => launchUrl(`mailto:${val}`),
+        website: (val) => launchUrl(val),
+        instagram: (val) => launchUrl(val),
+        facebook: (val) => launchUrl(val),
+        linkedin: (val) => launchUrl(val),
+        whatsapp: (val) => launchUrl(`https://wa.me/${val}`),
+    };
+    const PLATFORM_ORDER = ['phone', 'email', 'website', 'instagram', 'facebook', 'linkedin', 'whatsapp'];
+    const displayIcons = PLATFORM_ORDER
+        .filter(key => socialLinks[key])
+        .map(key => ({
+            key,
+            icon: getIconComponent(key, socialIconStyles?.[key] ?? 0),
+            action: URL_ACTIONS[key],
+        }))
+        .filter(item => item.icon !== null);
 
 
     return (
